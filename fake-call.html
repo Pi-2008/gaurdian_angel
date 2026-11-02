@@ -3,188 +3,506 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Call Me</title>
+<title>Guardian Angel — Police & Escort Fake Call</title>
 <style>
-  html, body { height: 100%; margin: 0; }
+  :root {
+    --bg: #0b0f19;
+    --card: #151c2c;
+    --border: #242f45;
+    --accent: #2563eb;
+    --danger: #dc2626;
+    --success: #16a34a;
+    --text: #f8fafc;
+    --text-muted: #94a3b8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 20px; font-family: system-ui, sans-serif; background: #111; color: #eee; text-align: center;
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
   }
-  button {
-    font-size: 1.2rem; padding: 14px 32px; border: 0; border-radius: 12px;
-    background: #2a2a2a; color: #fff; cursor: pointer; min-width: 240px;
+  .phone-screen {
+    width: 100%;
+    max-width: 400px;
+    min-height: 580px;
+    background: #000000;
+    border: 2px solid var(--border);
+    border-radius: 36px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+    position: relative;
+    padding: 28px 20px 24px;
   }
-  .accept { background: #2e7d32; }
-  .decline, .stop { background: #c62828; }
-  .name { font-size: 2rem; font-weight: 700; }
-  .sub { opacity: .65; }
-  #caption { max-width: 480px; min-height: 3.5rem; padding: 0 16px; font-size: 1.1rem; }
-  .ring { animation: pulse 1s infinite; }
-  @keyframes pulse { 50% { opacity: .35; } }
+  .status-bar {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 600;
+    color: #e2e8f0;
+    margin-bottom: 24px;
+    padding: 0 8px;
+  }
+  /* Menu View */
+  .menu-view {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    flex: 1;
+    justify-content: center;
+  }
+  .menu-title { font-size: 1.4rem; font-weight: 700; margin-bottom: 8px; color: #fff; }
+  .menu-desc { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 28px; line-height: 1.4; padding: 0 10px; }
+  .call-btn {
+    width: 100%;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 14px;
+    color: #fff;
+    cursor: pointer;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transition: all 0.2s;
+  }
+  .call-btn:hover { border-color: var(--accent); background: #1e293b; }
+  .call-btn .icon { font-size: 1.8rem; }
+  .call-btn strong { display: block; font-size: 1.05rem; }
+  .call-btn span { font-size: 0.8rem; color: var(--text-muted); }
+  .timer-note { font-size: 0.85rem; color: #38bdf8; margin-top: 10px; font-weight: 500; }
+  
+  /* Ringing View */
+  .ringing-view, .active-call-view {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    justify-content: space-between;
+    text-align: center;
+  }
+  .caller-avatar {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    background: #1e293b;
+    display: grid;
+    place-items: center;
+    font-size: 2.8rem;
+    margin: 20px auto 14px;
+    border: 3px solid #334155;
+  }
+  .caller-name { font-size: 1.6rem; font-weight: 700; margin-bottom: 4px; }
+  .caller-number { font-size: 0.95rem; color: var(--text-muted); margin-bottom: 6px; }
+  .call-status { font-size: 0.9rem; color: #38bdf8; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+  .pulse { animation: ring-pulse 1.2s infinite; }
+  @keyframes ring-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  .ring-actions { display: flex; justify-content: space-around; width: 100%; margin-bottom: 24px; }
+  .action-circle-btn {
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    border: 0;
+    display: grid;
+    place-items: center;
+    font-size: 1.8rem;
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 8px 16px rgba(0,0,0,0.4);
+    transition: transform 0.15s;
+  }
+  .action-circle-btn:active { transform: scale(0.92); }
+  .btn-accept { background: var(--success); }
+  .btn-decline { background: var(--danger); }
+  .action-label { font-size: 0.8rem; color: var(--text-muted); margin-top: 8px; }
+
+  /* In-Call View */
+  .call-timer { font-size: 1rem; color: #94a3b8; font-weight: 500; margin-bottom: 12px; }
+  .speech-bubble {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin: 12px 0;
+    font-size: 0.95rem;
+    color: #f1f5f9;
+    text-align: left;
+    min-height: 56px;
+    width: 100%;
+    line-height: 1.4;
+  }
+  .quick-replies {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    margin-bottom: 16px;
+  }
+  .reply-pill {
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #cbd5e1;
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s;
+  }
+  .reply-pill:hover { background: #1e293b; color: #fff; border-color: #38bdf8; }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-  <section id="menu">
-    <button data-who="dad">Make Dad call me</button><br><br>
-    <button data-who="officer">Make Officer call me</button>
-    <p class="sub" id="menuNote">Call arrives in 5 seconds</p>
-  </section>
 
-  <section id="ringing" hidden>
-    <div class="name" id="rName"></div>
-    <div class="sub ring">incoming call…</div><br>
-    <button class="accept" id="accept">Accept</button><br><br>
-    <button class="decline" id="decline">Decline</button>
-  </section>
+<div class="phone-screen">
+  <div class="status-bar">
+    <span id="clockTime">09:41</span>
+    <span>📶 5G &nbsp; 🔋 88%</span>
+  </div>
 
-  <section id="call" hidden>
-    <div class="name" id="cName"></div>
-    <div class="sub" id="cState">Connected</div>
-    <div id="caption"></div><br>
-    <button class="stop" id="stop">Stop</button>
-  </section>
+  <!-- MENU / SELECTION VIEW -->
+  <div id="menuView" class="menu-view">
+    <h1 class="menu-title">Intimidation Fake Call</h1>
+    <p class="menu-desc">Simulate an incoming phone call to deter harassers or creeps by letting them hear you talking directly to the police.</p>
+
+    <button class="call-btn" data-who="sub_inspector">
+      <div class="icon">👮</div>
+      <div>
+        <strong>Sub-Inspector (Police Patrol)</strong>
+        <span>Authoritative police officer tracking your live GPS</span>
+      </div>
+    </button>
+
+    <button class="call-btn" data-who="control_room">
+      <div class="icon">🚓</div>
+      <div>
+        <strong>112 Police Emergency Dispatch</strong>
+        <span>Control room dispatch confirming unit arrival</span>
+      </div>
+    </button>
+
+    <button class="call-btn" data-who="dad">
+      <div class="icon">👨</div>
+      <div>
+        <strong>Dad / Family Escort</strong>
+        <span>Waiting at the stop to pick you up right now</span>
+      </div>
+    </button>
+
+    <div class="timer-note" id="timerNotice">Call rings in 5 seconds after tap</div>
+  </div>
+
+  <!-- RINGING SCREEN -->
+  <div id="ringingView" class="ringing-view" hidden>
+    <div>
+      <div class="caller-avatar" id="ringAvatar">👮</div>
+      <div class="caller-name" id="ringName">Sub-Inspector Sharma</div>
+      <div class="caller-number" id="ringSub">Kerala Police Control</div>
+      <div class="call-status pulse">Incoming Emergency Call…</div>
+    </div>
+
+    <div class="ring-actions">
+      <div>
+        <button class="action-circle-btn btn-decline" id="btnDecline">✕</button>
+        <div class="action-label">Decline</div>
+      </div>
+      <div>
+        <button class="action-circle-btn btn-accept" id="btnAccept">📞</button>
+        <div class="action-label">Accept</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACTIVE CALL SCREEN -->
+  <div id="activeCallView" class="active-call-view" hidden>
+    <div>
+      <div class="caller-avatar" style="width: 72px; height: 72px; font-size: 2rem;" id="activeAvatar">👮</div>
+      <div class="caller-name" style="font-size: 1.3rem;" id="activeName">Sub-Inspector Sharma</div>
+      <div class="call-timer" id="callDuration">00:00</div>
+    </div>
+
+    <div class="speech-bubble" id="captionText">
+      Connecting to audio…
+    </div>
+
+    <div class="quick-replies" id="quickRepliesBox">
+      <!-- Quick tap responses generated dynamically based on persona -->
+    </div>
+
+    <div>
+      <button class="action-circle-btn btn-decline" id="btnEndCall" style="margin: 0 auto;">✕</button>
+      <div class="action-label">End Call</div>
+    </div>
+  </div>
+</div>
 
 <script>
-  const $ = (id) => document.getElementById(id);
+  const $ = id => document.getElementById(id);
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  // Real-time clock display
+  setInterval(() => {
+    const d = new Date();
+    $('clockTime').textContent = d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
+  }, 1000);
+
   const PERSONAS = {
-    dad: {
-      name: 'Dad', pitch: 0.75, rate: 0.95,
-      greet: 'Hello? Where are you? Everything okay?',
-      rules: [
-        [/\b(help|danger|scared|afraid|follow)/, 'Stay on the line. Tell me where you are. I am coming to get you right now.'],
-        [/\b(where|location)\b/, 'I am at home. Just tell me where you are, I will come.'],
-        [/\b(coming|come home|on my way|reaching|leaving)\b/, 'Good. Come straight home. I will wait up for you.'],
-        [/\b(dinner|food|eat|hungry)\b/, 'Dinner is ready. Come home and eat.'],
-        [/\b(money|pay|cash)\b/, 'We will talk about that when you are home.'],
-        [/\b(late|time)\b/, 'It is getting late. Do not stay out any longer.'],
-        [/\b(hello|hi|hey)\b/, 'Hello beta. What is going on?'],
-        [/\b(bye|goodbye|see you)\b/, 'Okay. See you soon. Be careful.'],
-        [/\b(okay|ok|fine|yes|yeah)\b/, 'Good. Keep me updated.'],
-        [/\b(no|nothing)\b/, 'Are you sure? You can tell me anything.'],
+    sub_inspector: {
+      name: "Sub-Inspector Kumar",
+      sub: "Kerala Police • Control Div",
+      avatar: "👮",
+      pitch: 0.65, rate: 0.9,
+      greet: "Hello, this is Sub-Inspector Kumar. I have your live GPS location on our patrol dashboard. Our police vehicle is 300 meters away from your stop. Is anyone bothering you right now?",
+      chips: [
+        "Yes Sir, someone is staring and following me.",
+        "I am inside the bus right now.",
+        "I can see your patrol lights approaching.",
+        "I am safe right now, please stay on the line."
       ],
-      fallback: ['Hmm. Tell me more.', 'I understand. Just come home soon.', 'Are you okay? You sound a bit off.', 'Okay. I am right here.']
+      rules: [
+        [/\b(yes|following|staring|creep|scared|man|person|harass|bus)\b/, "Stay calm and do not look at them. Look outside toward the road — our patrol vehicle with blue lights is pulling up in 60 seconds. Keep me on speakerphone."],
+        [/\b(where|reach|how long|coming)\b/, "We are right at the junction turning into your road right now. We have two armed personnel with us."],
+        [/\b(safe|okay|fine)\b/, "Good. Stay in the well-lit area. I will remain on this line until you confirm you have boarded or arrived safely."],
+        [/\b(lights|car|police car|see you)\b/, "Excellent. We have visual contact on the bus stop. Stand by."]
+      ],
+      fallback: [
+        "Understood. Speak loudly and clearly so people nearby can hear you. Our unit is right outside.",
+        "I am logging this call with the emergency central desk. State your exact landmark.",
+        "Stay on the line. Do not disconnect until our officer makes visual contact."
+      ]
     },
-    officer: {
-      name: 'Officer', pitch: 0.6, rate: 0.9,
-      greet: 'Hello, this is the duty officer speaking. Is this the person who called earlier?',
-      rules: [
-        [/\b(help|danger|scared|afraid|follow)/, 'Stay calm and stay on the line. Tell me your exact location. Help is on the way.'],
-        [/\b(where|location|address)\b/, 'We will come to you. Give me the nearest landmark or street name.'],
-        [/\b(coming|how long|when)\b/, 'A unit is on its way. Keep talking to me until it arrives.'],
-        [/\b(name)\b/, 'I am the duty officer on this line. I need you to stay on the call.'],
-        [/\b(hello|hi|hey)\b/, 'Hello. Please confirm you are safe right now.'],
-        [/\b(bye|goodbye)\b/, 'Do not hang up yet. Stay on the line until we reach you.'],
-        [/\b(okay|ok|fine|yes|yeah)\b/, 'Good. Stay where there are other people if you can.'],
-        [/\b(no|nothing)\b/, 'Understood. Stay on the line with me.'],
+    control_room: {
+      name: "112 Emergency Dispatch",
+      sub: "Central Police Dispatch",
+      avatar: "🚓",
+      pitch: 0.7, rate: 0.92,
+      greet: "Kerala Police 112 Emergency Control Room. Priority safety escort active. We are broadcasting your location to the nearest Highway Patrol vehicle. Confirm your status.",
+      chips: [
+        "I am currently waiting at the bus stand.",
+        "There is a suspicious person near me.",
+        "How far is the patrol unit?",
+        "Everything is fine, just monitoring."
       ],
-      fallback: ['Understood. Please continue.', 'I am noting that down. What happened next?', 'Stay on the line. We are handling it.', 'Can you repeat that more slowly?']
+      rules: [
+        [/\b(suspicious|creep|man|follow|danger|threat)\b/, "Unit 14 has been dispatched with priority sirens enabled. Approximate arrival time is 90 seconds."],
+        [/\b(far|time|how long)\b/, "Patrol unit distance is less than half a kilometer. Stay in public view."],
+        [/\b(fine|okay|safe)\b/, "Copy that. Emergency alert remains on standby. Stay connected."]
+      ],
+      fallback: [
+        "Control room monitoring line is open. Keep your audio channel active.",
+        "Dispatch unit acknowledges. Emergency beacon active on your GPS coordinate."
+      ]
+    },
+    dad: {
+      name: "Dad",
+      sub: "Mobile",
+      avatar: "👨",
+      pitch: 0.75, rate: 0.95,
+      greet: "Hello beta? Where have you reached? I'm waiting in the car right outside your bus stop.",
+      chips: [
+        "Dad, I'm reaching in 2 minutes.",
+        "Wait right at the main gate.",
+        "Someone is being weird here.",
+        "I'm getting off the bus now."
+      ],
+      rules: [
+        [/\b(weird|scared|creep|follow|danger)\b/, "Stay on the phone with me! I'm getting out of the car right now with my flashlight. Tell me exactly what you're wearing."],
+        [/\b(reaching|coming|2 minutes|bus)\b/, "Okay, I have the car headlights on. Look for the white car as soon as you step down."],
+        [/\b(okay|fine|yes)\b/, "Stay right there, I can see the bus coming down the road."]
+      ],
+      fallback: [
+        "I am right here waiting. Come straight to the car.",
+        "Keep talking to me loudly. I am watching the road."
+      ]
     }
   };
 
-  let persona = null, audioCtx = null, ringTimer = null, callTimer = null;
-  let rec = null, inCall = false, speaking = false;
+  let activePersona = null;
+  let audioCtx = null;
+  let ringInterval = null;
+  let countdownTimer = null;
+  let callTimerInterval = null;
+  let callSeconds = 0;
+  let inCall = false;
+  let isSpeaking = false;
+  let rec = null;
 
-  function show(id) { ['menu','ringing','call'].forEach(s => $(s).hidden = s !== id); }
-
-  // ringtone
-  function beep() {
-    if (!audioCtx) return;
-    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.frequency.value = 880; o.connect(g); g.connect(audioCtx.destination);
-    g.gain.setValueAtTime(0.15, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
-    o.start(); o.stop(audioCtx.currentTime + 0.4);
+  function showView(viewId) {
+    ['menuView', 'ringingView', 'activeCallView'].forEach(v => $(v).hidden = (v !== viewId));
   }
-  function startRing() {
-    beep(); if (navigator.vibrate) navigator.vibrate([400, 200, 400]);
-    ringTimer = setInterval(() => { beep(); if (navigator.vibrate) navigator.vibrate([400, 200, 400]); }, 1500);
+
+  // Authoritative Ringtone & Vibration
+  function ringTone() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(750, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(950, audioCtx.currentTime + 0.35);
+    gain.setValueAtTime(0.2, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.4);
   }
-  function stopRing() { clearInterval(ringTimer); ringTimer = null; if (navigator.vibrate) navigator.vibrate(0); }
 
-  // scheduling the call
-  document.querySelectorAll('#menu button').forEach(b => b.addEventListener('click', () => {
-    persona = PERSONAS[b.dataset.who];
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    let n = 5;
-    $('menuNote').textContent = persona.name + ' calling in ' + n + '…';
-    callTimer = setInterval(() => {
-      n--;
-      if (n > 0) { $('menuNote').textContent = persona.name + ' calling in ' + n + '…'; return; }
-      clearInterval(callTimer);
-      $('rName').textContent = persona.name;
-      show('ringing');
-      startRing();
-    }, 1000);
-  }));
+  function startRinging() {
+    ringTone();
+    if (navigator.vibrate) navigator.vibrate([500, 250, 500]);
+    ringInterval = setInterval(() => {
+      ringTone();
+      if (navigator.vibrate) navigator.vibrate([500, 250, 500]);
+    }, 1800);
+  }
 
-  $('decline').addEventListener('click', () => { stopRing(); backToMenu(); });
-  $('accept').addEventListener('click', () => {
-    stopRing();
-    $('cName').textContent = persona.name;
-    $('caption').textContent = '';
-    show('call');
-    if (!SR) { $('cState').textContent = 'Voice input needs Chrome or Edge'; }
-    inCall = true;
-    say(persona.greet);
+  function stopRinging() {
+    clearInterval(ringInterval);
+    ringInterval = null;
+    if (navigator.vibrate) navigator.vibrate(0);
+  }
+
+  // Triggering the call
+  document.querySelectorAll('.call-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const who = btn.dataset.who;
+      activePersona = PERSONAS[who];
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      
+      let countdown = 5;
+      $('timerNotice').textContent = `🚨 ${activePersona.name} calling in ${countdown}s…`;
+      
+      countdownTimer = setInterval(() => {
+        countdown--;
+        if (countdown > 0) {
+          $('timerNotice').textContent = `🚨 ${activePersona.name} calling in ${countdown}s…`;
+        } else {
+          clearInterval(countdownTimer);
+          $('ringName').textContent = activePersona.name;
+          $('ringSub').textContent = activePersona.sub;
+          $('ringAvatar').textContent = activePersona.avatar;
+          showView('ringingView');
+          startRinging();
+        }
+      }, 1000);
+    });
   });
-  $('stop').addEventListener('click', endCall);
 
-  function backToMenu() {
-    $('menuNote').textContent = 'Call arrives in 5 seconds';
-    show('menu');
-  }
+  // Decline call
+  $('btnDecline').addEventListener('click', () => {
+    stopRinging();
+    $('timerNotice').textContent = "Call rings in 5 seconds after tap";
+    showView('menuView');
+  });
+
+  // Accept call
+  $('btnAccept').addEventListener('click', () => {
+    stopRinging();
+    $('activeName').textContent = activePersona.name;
+    $('activeAvatar').textContent = activePersona.avatar;
+    $('captionText').textContent = 'Connecting with officer…';
+    showView('activeCallView');
+    
+    // Setup quick reply chips
+    const chipContainer = $('quickRepliesBox');
+    chipContainer.innerHTML = '';
+    activePersona.chips.forEach(chipText => {
+      const pill = document.createElement('button');
+      pill.className = 'reply-pill';
+      pill.textContent = '🗣️ ' + chipText;
+      pill.onclick = () => userSpeaks(chipText);
+      chipContainer.appendChild(pill);
+    });
+
+    inCall = true;
+    callSeconds = 0;
+    callTimerInterval = setInterval(() => {
+      callSeconds++;
+      const m = Math.floor(callSeconds / 60).toString().padStart(2, '0');
+      const s = (callSeconds % 60).toString().padStart(2, '0');
+      $('callDuration').textContent = `${m}:${s}`;
+    }, 1000);
+
+    // Initial officer greeting
+    setTimeout(() => speakOfficer(activePersona.greet), 700);
+  });
+
+  // End call
+  $('btnEndCall').addEventListener('click', endCall);
 
   function endCall() {
     inCall = false;
+    clearInterval(callTimerInterval);
     speechSynthesis.cancel();
-    if (rec) { try { rec.stop(); } catch (_) {} rec = null; }
-    backToMenu();
+    if (rec) { try { rec.stop(); } catch(_) {} rec = null; }
+    $('timerNotice').textContent = "Call rings in 5 seconds after tap";
+    showView('menuView');
   }
 
-  // speaking
-  function say(text) {
+  // Officer speaks
+  function speakOfficer(text) {
     if (!inCall) return;
-    $('caption').textContent = persona.name + ': ' + text;
-    $('cState').textContent = 'Speaking…';
-    speaking = true;
-    if (rec) { try { rec.abort(); } catch (_) {} }
+    $('captionText').innerHTML = `<strong>${activePersona.name}:</strong> "${text}"`;
+    isSpeaking = true;
+    if (rec) { try { rec.abort(); } catch(_) {} }
     speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.pitch = persona.pitch; u.rate = persona.rate; u.lang = 'en-IN';
-    u.onend = u.onerror = () => { speaking = false; listen(); };
-    speechSynthesis.speak(u);
+
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.pitch = activePersona.pitch;
+    utter.rate = activePersona.rate;
+    utter.lang = 'en-IN';
+    utter.onend = utter.onerror = () => {
+      isSpeaking = false;
+      startVoiceListening();
+    };
+    speechSynthesis.speak(utter);
   }
 
-  // listening
-  function listen() {
-    if (!inCall || !SR) return;
-    $('cState').textContent = 'Listening…';
+  // Handle user speech or chip tap
+  function userSpeaks(text) {
+    if (!inCall) return;
+    $('captionText').innerHTML = `<strong>You:</strong> "${text}"`;
+    let matchedAnswer = null;
+    for (const [pattern, ans] of activePersona.rules) {
+      if (pattern.test(text.toLowerCase())) {
+        matchedAnswer = ans;
+        break;
+      }
+    }
+    if (!matchedAnswer) {
+      matchedAnswer = activePersona.fallback[Math.floor(Math.random() * activePersona.fallback.length)];
+    }
+    setTimeout(() => speakOfficer(matchedAnswer), 800);
+  }
+
+  // Automatic speech recognition (if browser supported)
+  function startVoiceListening() {
+    if (!inCall || !SR || isSpeaking) return;
     rec = new SR();
     rec.lang = 'en-IN';
     rec.continuous = false;
     rec.interimResults = false;
-    let got = false;
-    rec.onresult = (e) => {
-      got = true;
-      const text = e.results[0][0].transcript.toLowerCase();
-      $('caption').textContent = 'You: ' + text;
-      setTimeout(() => say(reply(text)), 600);
-    };
-    rec.onerror = (e) => {
-      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        $('cState').textContent = 'Microphone permission denied';
-        got = true;
-      }
-    };
-    rec.onend = () => { if (inCall && !got && !speaking) setTimeout(listen, 200); };
-    try { rec.start(); } catch (_) {}
-  }
 
-  function reply(text) {
-    for (const [re, ans] of persona.rules) if (re.test(text)) return ans;
-    return persona.fallback[Math.floor(Math.random() * persona.fallback.length)];
+    rec.onresult = (e) => {
+      const text = e.results[0][0].transcript;
+      userSpeaks(text);
+    };
+    rec.onend = () => {
+      if (inCall && !isSpeaking) setTimeout(startVoiceListening, 400);
+    };
+    try { rec.start(); } catch(_) {}
   }
 </script>
 </body>
