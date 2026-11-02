@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Danger Listener</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 24px; font-family: system-ui, sans-serif; background: #111; color: #eee;
+    transition: background .2s;
+  }
+  body.danger { background: #b00020; color: #fff; }
+  button {
+    font-size: 1.2rem; padding: 14px 32px; border: 0; border-radius: 10px;
+    background: #2e7d32; color: #fff; cursor: pointer;
+  }
+  button.on { background: #444; }
+  #alert { font-size: 2.5rem; font-weight: 700; min-height: 3rem; text-align: center; }
+  #status { opacity: .6; font-size: .95rem; text-align: center; padding: 0 16px; }
+</style>
+</head>
+<body>
+  <button id="btn">Start listening</button>
+  <div id="alert"></div>
+  <div id="status"></div>
+
+<script>
+  const btn = document.getElementById('btn');
+  const alertEl = document.getElementById('alert');
+  const statusEl = document.getElementById('status');
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, listening = false;
+
+  if (!SR) {
+    btn.disabled = true;
+    statusEl.textContent = 'Speech recognition is not supported. Use Chrome or Edge.';
+  }
+
+  function setDanger(on) {
+    document.body.classList.toggle('danger', on);
+    alertEl.textContent = on ? 'User in danger' : '';
+  }
+
+  function start() {
+    rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'en-US';
+
+    rec.onresult = (e) => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const text = e.results[i][0].transcript.toLowerCase();
+        statusEl.textContent = 'Heard: ' + text;
+        if (/\b(help|save)\b/.test(text)) setDanger(true);
+      }
+    };
+    rec.onerror = (e) => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        statusEl.textContent = 'Microphone permission denied.';
+        stop();
+      }
+    };
+    rec.onend = () => { if (listening) { try { rec.start(); } catch (_) {} } };
+
+    listening = true;
+    setDanger(false);
+    btn.textContent = 'Stop listening';
+    btn.classList.add('on');
+    statusEl.textContent = 'Listening…';
+    rec.start();
+  }
+
+  function stop() {
+    listening = false;
+    if (rec) rec.stop();
+    btn.textContent = 'Start listening';
+    btn.classList.remove('on');
+  }
+
+  btn.addEventListener('click', () => listening ? stop() : start());
+</script>
+</body>
+</html>

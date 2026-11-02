@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Call Me</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 20px; font-family: system-ui, sans-serif; background: #111; color: #eee; text-align: center;
+  }
+  button {
+    font-size: 1.2rem; padding: 14px 32px; border: 0; border-radius: 12px;
+    background: #2a2a2a; color: #fff; cursor: pointer; min-width: 240px;
+  }
+  .accept { background: #2e7d32; }
+  .decline, .stop { background: #c62828; }
+  .name { font-size: 2rem; font-weight: 700; }
+  .sub { opacity: .65; }
+  #caption { max-width: 480px; min-height: 3.5rem; padding: 0 16px; font-size: 1.1rem; }
+  .ring { animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <section id="menu">
+    <button data-who="dad">Make Dad call me</button><br><br>
+    <button data-who="officer">Make Officer call me</button>
+    <p class="sub" id="menuNote">Call arrives in 5 seconds</p>
+  </section>
+
+  <section id="ringing" hidden>
+    <div class="name" id="rName"></div>
+    <div class="sub ring">incoming call…</div><br>
+    <button class="accept" id="accept">Accept</button><br><br>
+    <button class="decline" id="decline">Decline</button>
+  </section>
+
+  <section id="call" hidden>
+    <div class="name" id="cName"></div>
+    <div class="sub" id="cState">Connected</div>
+    <div id="caption"></div><br>
+    <button class="stop" id="stop">Stop</button>
+  </section>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const PERSONAS = {
+    dad: {
+      name: 'Dad', pitch: 0.75, rate: 0.95,
+      greet: 'Hello? Where are you? Everything okay?',
+      rules: [
+        [/\b(help|danger|scared|afraid|follow)/, 'Stay on the line. Tell me where you are. I am coming to get you right now.'],
+        [/\b(where|location)\b/, 'I am at home. Just tell me where you are, I will come.'],
+        [/\b(coming|come home|on my way|reaching|leaving)\b/, 'Good. Come straight home. I will wait up for you.'],
+        [/\b(dinner|food|eat|hungry)\b/, 'Dinner is ready. Come home and eat.'],
+        [/\b(money|pay|cash)\b/, 'We will talk about that when you are home.'],
+        [/\b(late|time)\b/, 'It is getting late. Do not stay out any longer.'],
+        [/\b(hello|hi|hey)\b/, 'Hello beta. What is going on?'],
+        [/\b(bye|goodbye|see you)\b/, 'Okay. See you soon. Be careful.'],
+        [/\b(okay|ok|fine|yes|yeah)\b/, 'Good. Keep me updated.'],
+        [/\b(no|nothing)\b/, 'Are you sure? You can tell me anything.'],
+      ],
+      fallback: ['Hmm. Tell me more.', 'I understand. Just come home soon.', 'Are you okay? You sound a bit off.', 'Okay. I am right here.']
+    },
+    officer: {
+      name: 'Officer', pitch: 0.6, rate: 0.9,
+      greet: 'Hello, this is the duty officer speaking. Is this the person who called earlier?',
+      rules: [
+        [/\b(help|danger|scared|afraid|follow)/, 'Stay calm and stay on the line. Tell me your exact location. Help is on the way.'],
+        [/\b(where|location|address)\b/, 'We will come to you. Give me the nearest landmark or street name.'],
+        [/\b(coming|how long|when)\b/, 'A unit is on its way. Keep talking to me until it arrives.'],
+        [/\b(name)\b/, 'I am the duty officer on this line. I need you to stay on the call.'],
+        [/\b(hello|hi|hey)\b/, 'Hello. Please confirm you are safe right now.'],
+        [/\b(bye|goodbye)\b/, 'Do not hang up yet. Stay on the line until we reach you.'],
+        [/\b(okay|ok|fine|yes|yeah)\b/, 'Good. Stay where there are other people if you can.'],
+        [/\b(no|nothing)\b/, 'Understood. Stay on the line with me.'],
+      ],
+      fallback: ['Understood. Please continue.', 'I am noting that down. What happened next?', 'Stay on the line. We are handling it.', 'Can you repeat that more slowly?']
+    }
+  };
+
+  let persona = null, audioCtx = null, ringTimer = null, callTimer = null;
+  let rec = null, inCall = false, speaking = false;
+
+  function show(id) { ['menu','ringing','call'].forEach(s => $(s).hidden = s !== id); }
+
+  // ringtone
+  function beep() {
+    if (!audioCtx) return;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.frequency.value = 880; o.connect(g); g.connect(audioCtx.destination);
+    g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+    o.start(); o.stop(audioCtx.currentTime + 0.4);
+  }
+  function startRing() {
+    beep(); if (navigator.vibrate) navigator.vibrate([400, 200, 400]);
+    ringTimer = setInterval(() => { beep(); if (navigator.vibrate) navigator.vibrate([400, 200, 400]); }, 1500);
+  }
+  function stopRing() { clearInterval(ringTimer); ringTimer = null; if (navigator.vibrate) navigator.vibrate(0); }
+
+  // scheduling the call
+  document.querySelectorAll('#menu button').forEach(b => b.addEventListener('click', () => {
+    persona = PERSONAS[b.dataset.who];
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    let n = 5;
+    $('menuNote').textContent = persona.name + ' calling in ' + n + '…';
+    callTimer = setInterval(() => {
+      n--;
+      if (n > 0) { $('menuNote').textContent = persona.name + ' calling in ' + n + '…'; return; }
+      clearInterval(callTimer);
+      $('rName').textContent = persona.name;
+      show('ringing');
+      startRing();
+    }, 1000);
+  }));
+
+  $('decline').addEventListener('click', () => { stopRing(); backToMenu(); });
+  $('accept').addEventListener('click', () => {
+    stopRing();
+    $('cName').textContent = persona.name;
+    $('caption').textContent = '';
+    show('call');
+    if (!SR) { $('cState').textContent = 'Voice input needs Chrome or Edge'; }
+    inCall = true;
+    say(persona.greet);
+  });
+  $('stop').addEventListener('click', endCall);
+
+  function backToMenu() {
+    $('menuNote').textContent = 'Call arrives in 5 seconds';
+    show('menu');
+  }
+
+  function endCall() {
+    inCall = false;
+    speechSynthesis.cancel();
+    if (rec) { try { rec.stop(); } catch (_) {} rec = null; }
+    backToMenu();
+  }
+
+  // speaking
+  function say(text) {
+    if (!inCall) return;
+    $('caption').textContent = persona.name + ': ' + text;
+    $('cState').textContent = 'Speaking…';
+    speaking = true;
+    if (rec) { try { rec.abort(); } catch (_) {} }
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.pitch = persona.pitch; u.rate = persona.rate; u.lang = 'en-IN';
+    u.onend = u.onerror = () => { speaking = false; listen(); };
+    speechSynthesis.speak(u);
+  }
+
+  // listening
+  function listen() {
+    if (!inCall || !SR) return;
+    $('cState').textContent = 'Listening…';
+    rec = new SR();
+    rec.lang = 'en-IN';
+    rec.continuous = false;
+    rec.interimResults = false;
+    let got = false;
+    rec.onresult = (e) => {
+      got = true;
+      const text = e.results[0][0].transcript.toLowerCase();
+      $('caption').textContent = 'You: ' + text;
+      setTimeout(() => say(reply(text)), 600);
+    };
+    rec.onerror = (e) => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        $('cState').textContent = 'Microphone permission denied';
+        got = true;
+      }
+    };
+    rec.onend = () => { if (inCall && !got && !speaking) setTimeout(listen, 200); };
+    try { rec.start(); } catch (_) {}
+  }
+
+  function reply(text) {
+    for (const [re, ans] of persona.rules) if (re.test(text)) return ans;
+    return persona.fallback[Math.floor(Math.random() * persona.fallback.length)];
+  }
+</script>
+</body>
+</html>
