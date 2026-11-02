@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Train Journey Guard</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  body{margin:0;font-family:system-ui,sans-serif;display:flex;flex-direction:column;height:100vh}
+  #panel{padding:10px;background:#f4f4f4;display:grid;gap:6px}
+  input,select,button{font-size:16px;padding:8px;border:1px solid #bbb;border-radius:6px}
+  .row{display:flex;gap:6px}.row>*{flex:1}
+  button{background:#2563eb;color:#fff;border:none}
+  button.green{background:#16a34a} button.red{background:#dc2626} button.grey{background:#6b7280}
+  #map{flex:1}
+  #status{font-weight:600;padding:6px;border-radius:6px;background:#e5e7eb}
+  #status.ok{background:#bbf7d0} #status.bad{background:#fecaca}
+</style>
+</head>
+<body>
+<div id="panel">
+  <div class="row">
+    <input id="from" placeholder="Boarding station / place">
+    <button class="grey" id="useLoc" style="flex:0 0 auto">📍</button>
+  </div>
+  <input id="to" placeholder="Exit station / place">
+  <div class="row">
+    <select id="mode">
+      <option value="line">Straight line</option>
+      <option value="road">Road route (OSRM)</option>
+    </select>
+    <input id="radius" type="number" value="2000" min="100" step="100" title="Radius in metres">
+  </div>
+  <div class="row">
+    <button id="plan">Plan route</button>
+    <button id="start" class="green" disabled>Start journey</button>
+    <button id="stop" class="red" disabled>Stop</button>
+  </div>
+  <div id="status">Enter two places and tap Plan route. Radius is in metres.</div>
+  <button id="silence" class="red" style="display:none">🔕 Silence alarm</button>
+</div>
+<div id="map"></div>
+
+<script>
+const map = L.map('map').setView([10.0, 76.3], 7);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
+
+const $ = id => document.getElementById(id);
+let routePts = [], routeLine, corridor, meMarker, startM, endM;
+let watchId = null, offCount = 0, alarmOn = false, audioCtx, beepTimer, wakeLock;
+
+function setStatus(t, cls=''){ $('status').textContent = t; $('status').className = cls; }
+
+async function geocode(q){
+  const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q));
+  const j = await r.json();
+  if(!j.length) throw new Error('Not found: '+q);
+  return {lat:+j[0].lat, lon:+j[0].lon};
+}
+
+$('useLoc').onclick = () => {
+  navigator.geolocation.getCurrentPosition(
+    p => { $('from').value = p.coords.latitude.toFixed(5)+','+p.coords.longitude.toFixed(5); },
+    e => setStatus('Location error: '+e.message,'bad'), {enableHighAccuracy:true});
+};
+
+async function resolve(v){
+  const m = v.match(/^\s*(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)\s*$/);
+  return m ? {lat:+m[1], lon:+m[3]} : geocode(v);
+}
+
+$('plan').onclick = async () => {
+  try{
+    setStatus('Planning…');
+    const a = await resolve($('from').value), b = await resolve($('to').value);
+    if($('mode').value === 'road'){
+      const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${a.lon},${a.lat};${b.lon},${b.lat}?overview=full&geometries=geojson`);
+      const j = await r.json();
+      routePts = j.routes[0].geometry.coordinates.map(c => ({lat:c[1], lon:c[0]}));
+    } else routePts = [a, b];
+    drawRoute(a, b);
+    $('start').disabled = false;
+    setStatus('Route ready. Tap Start journey when you board.');
+  }catch(e){ setStatus(e.message,'bad'); }
+};
+
+function drawRoute(a,b){
+  [routeLine,corridor,startM,endM].forEach(l => l && map.removeLayer(l));
+  const ll = routePts.map(p => [p.lat,p.lon]);
+  routeLine = L.polyline(ll,{color:'#2563eb',weight:4}).addTo(map);
+  corridor = L.polyline(ll,{color:'#2563eb',weight:2*pxFor(), opacity:.15}).addTo(map);
+  startM = L.marker([a.lat,a.lon]).addTo(map).bindPopup('Start');
+  endM = L.marker([b.lat,b.lon]).addTo(map).bindPopup('Exit');
+  map.fitBounds(routeLine.getBounds(),{padding:[30,30]});
+  map.on('zoomend', () => corridor && corridor.setStyle({weight:2*pxFor()}));
+}
+function pxFor(){ // radius in metres -> pixels at current view
+  const c = map.getCenter(), r = +$('radius').value || 1000;
+  const dLat = r/111320;
+  return Math.max(2, Math.abs(map.latLngToLayerPoint([c.lat+dLat,c.lng]).y - map.latLngToLayerPoint([c.lat,c.lng]).y));
+}
+$('radius').onchange = () => corridor && corridor.setStyle({weight:2*pxFor()});
+
+// distance (m) from point to the polyline, using a local flat approximation
+function distToRoute(lat, lon){
+  const kx = 111320*Math.cos(lat*Math.PI/180), ky = 110540;
+  let best = Infinity;
+  for(let i=0;i<routePts.length-1;i++){
+    const ax=(routePts[i].lon-lon)*kx, ay=(routePts[i].lat-lat)*ky;
+    const bx=(routePts[i+1].lon-lon)*kx, by=(routePts[i+1].lat-lat)*ky;
+    const dx=bx-ax, dy=by-ay, len=dx*dx+dy*dy;
+    let t = len ? Math.max(0,Math.min(1,-(ax*dx+ay*dy)/len)) : 0;
+    best = Math.min(best, Math.hypot(ax+t*dx, ay+t*dy));
+  }
+  return best;
+}
+
+// ----- alarm -----
+function beep(){
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type='square'; o.frequency.value=880; g.gain.value=.4;
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(); o.stop(audioCtx.currentTime+.3);
+  if(navigator.vibrate) navigator.vibrate([300,100,300]);
+}
+function startAlarm(){
+  if(alarmOn) return; alarmOn = true;
+  $('silence').style.display='block';
+  beep(); beepTimer = setInterval(beep, 700);
+  if('Notification' in window && Notification.permission==='granted')
+    new Notification('⚠️ Off route!', {body:'You have left the route corridor.'});
+}
+function stopAlarm(){
+  alarmOn=false; clearInterval(beepTimer); $('silence').style.display='none';
+  if(navigator.vibrate) navigator.vibrate(0);
+}
+$('silence').onclick = stopAlarm;
+
+// ----- journey -----
+$('start').onclick = async () => {
+  audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+  await audioCtx.resume();
+  if('Notification' in window && Notification.permission==='default') Notification.requestPermission();
+  try{ wakeLock = await navigator.wakeLock?.request('screen'); }catch(e){}
+  offCount = 0;
+  watchId = navigator.geolocation.watchPosition(onPos, e => setStatus('GPS error: '+e.message,'bad'),
+    {enableHighAccuracy:true, maximumAge:2000, timeout:20000});
+  $('start').disabled = true; $('stop').disabled = false; $('plan').disabled = true;
+  setStatus('Journey started. Waiting for GPS…');
+};
+
+function onPos(p){
+  const {latitude:lat, longitude:lon, accuracy} = p.coords;
+  if(!meMarker) meMarker = L.circleMarker([lat,lon],{radius:8,color:'#fff',fillColor:'#dc2626',fillOpacity:1,weight:2}).addTo(map);
+  else meMarker.setLatLng([lat,lon]);
+  const radius = +$('radius').value;
+  const d = distToRoute(lat,lon);
+  // only count it as off-route if clearly outside, allowing for GPS error
+  const off = d - Math.min(accuracy, radius) > radius;
+  offCount = off ? offCount+1 : 0;
+  if(offCount >= 2){
+    startAlarm();
+    setStatus(`⚠️ OFF ROUTE: ${Math.round(d)} m away (limit ${radius} m)`,'bad');
+  } else {
+    setStatus(`On route: ${Math.round(d)} m from line (limit ${radius} m, GPS ±${Math.round(accuracy)} m)`,'ok');
+    if(alarmOn && d < radius*0.9) stopAlarm();
+  }
+}
+
+$('stop').onclick = () => {
+  navigator.geolocation.clearWatch(watchId); watchId=null;
+  stopAlarm(); wakeLock?.release?.();
+  $('start').disabled=false; $('stop').disabled=true; $('plan').disabled=false;
+  setStatus('Journey stopped.');
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Train Journey Guard</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  body{margin:0;font-family:system-ui,sans-serif;display:flex;flex-direction:column;height:100vh}
+  #panel{padding:10px;background:#f4f4f4;display:grid;gap:6px}
+  input,select,button{font-size:16px;padding:8px;border:1px solid #bbb;border-radius:6px}
+  .row{display:flex;gap:6px}.row>*{flex:1}
+  button{background:#2563eb;color:#fff;border:none}
+  button.green{background:#16a34a} button.red{background:#dc2626} button.grey{background:#6b7280}
+  #map{flex:1}
+  #status{font-weight:600;padding:6px;border-radius:6px;background:#e5e7eb}
+  #status.ok{background:#bbf7d0} #status.bad{background:#fecaca}
+  button.amber{background:#d97706}
+  #banner{font-size:22px;font-weight:800;text-align:center;padding:10px;border-radius:8px;color:#fff;letter-spacing:1px}
+  #banner.safe{background:#16a34a}
+  #banner.danger{background:#dc2626;animation:pulse .8s infinite alternate}
+  @keyframes pulse{from{opacity:1}to{opacity:.55}}
+</style>
+</head>
+<body>
+<div id="panel">
+  <div id="banner" class="safe">✅ SAFE</div>
+  <div class="row">
+    <select id="from"></select>
+    <button class="grey" id="useLoc" style="flex:0 0 auto" title="Use my current location">📍</button>
+  </div>
+  <input id="fromText" placeholder="Type the boarding place (Kerala)" style="display:none">
+  <select id="to"></select>
+  <input id="toText" placeholder="Type the exit place (Kerala)" style="display:none">
+  <div class="row">
+    <select id="mode">
+      <option value="line">Straight line + tap-to-add waypoints</option>
+      <option value="osrm">My own OSRM server</option>
+    </select>
+    <input id="radius" type="number" value="2000" min="100" step="100" title="Radius in metres">
+  </div>
+  <div class="row">
+    <button id="plan">Plan route</button>
+    <button id="start" class="green" disabled>Start journey</button>
+    <button id="stop" class="red" disabled>Stop</button>
+  </div>
+  <button id="sim" class="amber" disabled>▶ Simulate deviation</button>
+  <input id="osrmUrl" placeholder="Your OSRM URL, e.g. http://localhost:5000" style="display:none">
+  <button class="grey" id="clearWp">Clear waypoints</button>
+  <div id="status">Enter two places and tap Plan route. Radius is in metres.</div>
+  <button id="silence" class="red" style="display:none">🔕 Silence alarm</button>
+</div>
+<div id="map"></div>
+
+<script>
+const map = L.map('map').setView([10.0, 76.3], 7);
+// CARTO Voyager basemap. Needs a free key: https://www.carto.com/basemaps/apikey/
+// Paste your key between the quotes below (keep your key private, don't share it).
+const CARTO_KEY = 'cb1_504g_1_cb69ee0c11a5d580a43f47fe';
+L.tileLayer('https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key='+encodeURIComponent(CARTO_KEY),{
+  maxZoom:20,
+  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+}).addTo(map);
+
+const $ = id => document.getElementById(id);
+let routePts = [], routeLine, corridor, meMarker, startM, endM, ends, waypoints = [];
+let watchId = null, offCount = 0, alarmOn = false, audioCtx, beepTimer, wakeLock, simTimer = null;
+
+function setStatus(t, cls=''){ $('status').textContent = t; $('status').className = cls; }
+if(!CARTO_KEY) setStatus('Map needs a free CARTO key: paste it into CARTO_KEY near the top of the script.','bad');
+
+// ----- Kerala places for the dropdowns: [name, latitude, longitude] by district -----
+const KERALA = {
+  'Thiruvananthapuram': [['Thiruvananthapuram',8.4875,76.9525],['Kazhakkoottam',8.5667,76.8667],['Attingal',8.6967,76.8153],['Varkala',8.7333,76.7167],['Nedumangad',8.6033,77.0017],['Neyyattinkara',8.4000,77.0833],['Kovalam',8.4004,76.9787],['Parassala',8.3400,77.1480]],
+  'Kollam': [['Kollam',8.8932,76.6141],['Paravur (Kollam)',8.8167,76.6667],['Chavara',8.9833,76.5333],['Karunagappally',9.0580,76.5340],['Kottarakkara',9.0000,76.7667],['Punalur',9.0167,76.9167]],
+  'Pathanamthitta': [['Pathanamthitta',9.2648,76.7870],['Adoor',9.1500,76.7333],['Pandalam',9.2253,76.6786],['Thiruvalla',9.3833,76.5667],['Ranni',9.3833,76.7833],['Konni',9.2333,76.8500]],
+  'Alappuzha': [['Alappuzha',9.4981,76.3388],['Ambalapuzha',9.3833,76.3667],['Cherthala',9.6833,76.3333],['Haripad',9.2833,76.4500],['Kayamkulam',9.1747,76.5017],['Mavelikkara',9.2500,76.5333],['Chengannur',9.3167,76.6167]],
+  'Kottayam': [['Kottayam',9.5916,76.5222],['Ettumanoor',9.6667,76.5667],['Changanassery',9.4500,76.5333],['Vaikom',9.7500,76.4000],['Pala',9.7100,76.6833],['Kanjirappally',9.5500,76.7833]],
+  'Idukki': [['Thodupuzha',9.8958,76.7183],['Painavu (Idukki)',9.8481,76.9361],['Adimali',10.0167,76.9500],['Munnar',10.0889,77.0595],['Nedumkandam',9.8333,77.1500],['Kattappana',9.7500,77.1167],['Kumily',9.6000,77.1667]],
+  'Ernakulam': [['Ernakulam Junction (Kochi)',9.9697,76.2896],['Fort Kochi',9.9658,76.2421],['Tripunithura',9.9439,76.3480],['Kakkanad',10.0159,76.3419],['Thrikkakara',10.0270,76.3300],['Kalamassery',10.0500,76.3167],['Aluva',10.1004,76.3570],['North Paravur',10.1500,76.2167],['Angamaly',10.1960,76.3860],['Perumbavoor',10.1167,76.4833],['Muvattupuzha',9.9894,76.5790],['Kothamangalam',10.0600,76.6350]],
+  'Thrissur': [['Thrissur',10.5276,76.2144],['Mala',10.2406,76.2561],['Irinjalakuda',10.3414,76.2108],['Kodungallur',10.2260,76.1950],['Kodakara',10.3764,76.2819],['Chalakudy',10.3070,76.3340],['Wadakkanchery',10.6558,76.2514],['Kunnamkulam',10.6500,76.0667],['Guruvayur',10.5944,76.0410],['Chavakkad',10.5833,76.0333]],
+  'Palakkad': [['Palakkad',10.7867,76.6548],['Shoranur',10.7600,76.2700],['Ottapalam',10.7700,76.3800],['Pattambi',10.8000,76.1833],['Cherpulassery',10.8833,76.3167],['Mannarkkad',10.9933,76.4600],['Alathur',10.6500,76.5500],['Chittur',10.7000,76.7500]],
+  'Malappuram': [['Malappuram',11.0510,76.0711],['Manjeri',11.1200,76.1200],['Perinthalmanna',10.9780,76.2260],['Nilambur',11.2800,76.2300],['Kondotty',11.1500,75.9667],['Kottakkal',10.9983,76.0000],['Valanchery',10.8833,76.0833],['Tirur',10.9167,75.9167],['Tanur',10.9667,75.8833],['Parappanangadi',11.0500,75.8500],['Ponnani',10.7667,75.9250]],
+  'Kozhikode': [['Kozhikode',11.2588,75.7804],['Feroke',11.1833,75.8333],['Mukkam',11.3000,76.0167],['Thamarassery',11.4167,75.9167],['Koyilandy',11.4400,75.6900],['Perambra',11.5667,75.7667],['Vadakara',11.6000,75.5917]],
+  'Wayanad': [['Kalpetta',11.6103,76.0830],['Sulthan Bathery',11.6667,76.2667],['Mananthavady',11.8000,76.0000]],
+  'Kannur': [['Kannur',11.8745,75.3704],['Thalassery',11.7490,75.4890],['Panoor',11.7500,75.5833],['Koothuparamba',11.8333,75.5667],['Mattannur',11.9333,75.5833],['Iritty',11.9833,75.6667],['Taliparamba',12.0333,75.3667],['Payyanur',12.1000,75.2000]],
+  'Kasaragod': [['Nileshwar',12.2500,75.1333],['Kanhangad',12.3167,75.0833],['Kasaragod',12.4996,74.9869],['Manjeshwar',12.7167,74.8833]]
+};
+function fillSelect(id, placeholder){
+  const s = $(id);
+  s.innerHTML = '';
+  s.add(new Option(placeholder, ''));
+  for(const [district, places] of Object.entries(KERALA)){
+    const g = document.createElement('optgroup'); g.label = district;
+    for(const [n, la, lo] of places) g.appendChild(new Option(n, la+','+lo));
+    s.appendChild(g);
+  }
+  s.add(new Option('Other place in Kerala (type its name)…', '__other'));
+  s.onchange = () => { $(id+'Text').style.display = s.value === '__other' ? '' : 'none'; };
+}
+fillSelect('from', 'Boarding station…');
+fillSelect('to', 'Exit station…');
+
+function setCurrentLocation(v){
+  let o = $('from').querySelector('option[data-current]');
+  if(!o){
+    o = new Option('📍 My current location', v); o.dataset.current = '1';
+    $('from').insertBefore(o, $('from').options[1]);
+  }
+  o.value = v; $('from').value = v;
+  $('fromText').style.display = 'none';
+}
+function placeValue(selId, txtId){
+  const v = $(selId).value;
+  if(!v) throw new Error('Choose both a boarding place and an exit place.');
+  if(v === '__other'){
+    const t = $(txtId).value.trim();
+    if(!t) throw new Error('Type the place name.');
+    return t;
+  }
+  return v;
+}
+
+// Nominatim usage policy: max 1 request/second, cache results, no autocomplete.
+// Searches run only when Plan route is tapped, are spaced >1s apart, and are cached.
+const geoCache = {};
+let lastGeo = 0;
+async function geocode(q){
+  const key = q.trim().toLowerCase();
+  if(geoCache[key]) return geoCache[key];
+  const wait = lastGeo + 1100 - Date.now();
+  if(wait > 0) await new Promise(res => setTimeout(res, wait));
+  lastGeo = Date.now();
+  // Only look inside Kerala (India), so names can't match places abroad.
+  const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=in&viewbox=74.85,12.85,77.45,8.15&bounded=1&q='+encodeURIComponent(q));
+  if(!r.ok) throw new Error('Place search failed (HTTP '+r.status+')');
+  const j = await r.json();
+  if(!j.length) throw new Error('"'+q+'" was not found in Kerala. Try picking from the list.');
+  return geoCache[key] = {lat:+j[0].lat, lon:+j[0].lon};
+}
+
+$('useLoc').onclick = () => {
+  navigator.geolocation.getCurrentPosition(
+    p => { setCurrentLocation(p.coords.latitude.toFixed(5)+','+p.coords.longitude.toFixed(5)); },
+    e => setStatus('Location error: '+e.message,'bad'), {enableHighAccuracy:true});
+};
+
+async function resolve(v){
+  const m = v.match(/^\s*(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)\s*$/);
+  return m ? {lat:+m[1], lon:+m[3]} : geocode(v);
+}
+
+$('plan').onclick = async () => {
+  try{
+    $('plan').disabled = true;
+    setStatus('Planning…');
+    const fv = placeValue('from','fromText'), tv = placeValue('to','toText');
+    if(fv === tv) throw new Error('Pick two different places.');
+    const a = await resolve(fv), b = await resolve(tv);
+    let note = '';
+    ends = {a, b}; waypoints = [];
+    if($('mode').value === 'osrm'){
+      try{ routePts = await osrmRoute(a, b); }
+      catch(e){
+        routePts = [a, b];
+        note = ` (OSRM failed: ${e.message}. Using straight line instead.)`;
+      }
+    } else routePts = [a, b];
+    drawRoute(a, b);
+    $('start').disabled = false; $('sim').disabled = false;
+    setStatus('Route ready. Tap the map to add waypoints along the track, then Start journey.'+note, note ? 'bad' : '');
+  }catch(e){ setStatus(e.message,'bad'); }
+  finally{ setTimeout(() => $('plan').disabled = false, 1100); } // keeps repeat taps under 1 request/second
+};
+
+// Uses only an OSRM server you run yourself (or one you have permission to use).
+// No public demo servers are contacted.
+async function osrmRoute(a, b){
+  const base = $('osrmUrl').value.trim().replace(/\/+$/, '');
+  if(!base) throw new Error('enter your own OSRM server URL');
+  const servers = [base + '/route/v1/driving'];
+  let lastErr;
+  for(const s of servers){
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 10000);
+    try{
+      const url = `${s}/${a.lon},${a.lat};${b.lon},${b.lat}?overview=simplified&geometries=geojson&continue_straight=false`;
+      const r = await fetch(url, {signal: ctrl.signal});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const j = await r.json();
+      if(j.code !== 'Ok' || !j.routes || !j.routes.length) throw new Error(j.message || j.code);
+      return j.routes[0].geometry.coordinates.map(c => ({lat:c[1], lon:c[0]}));
+    }catch(e){ lastErr = e.name === 'AbortError' ? new Error('timed out') : e; }
+    finally{ clearTimeout(t); }
+  }
+  throw lastErr;
+}
+
+function drawRoute(a,b,fit=true){
+  [routeLine,corridor,startM,endM].forEach(l => l && map.removeLayer(l));
+  const ll = routePts.map(p => [p.lat,p.lon]);
+  routeLine = L.polyline(ll,{color:'#2563eb',weight:4}).addTo(map);
+  corridor = L.polyline(ll,{color:'#2563eb',weight:2*pxFor(), opacity:.15}).addTo(map);
+  startM = L.marker([a.lat,a.lon]).addTo(map).bindPopup('Start');
+  endM = L.marker([b.lat,b.lon]).addTo(map).bindPopup('Exit');
+  if(fit) map.fitBounds(routeLine.getBounds(),{padding:[30,30]});
+}
+map.on('zoomend', () => corridor && corridor.setStyle({weight:2*pxFor()}));
+
+// ----- waypoints: tap the map to bend the route along the real track -----
+function segDist(lat, lon, p, q){
+  const kx = 111320*Math.cos(lat*Math.PI/180), ky = 110540;
+  const ax=(p.lon-lon)*kx, ay=(p.lat-lat)*ky, bx=(q.lon-lon)*kx, by=(q.lat-lat)*ky;
+  const dx=bx-ax, dy=by-ay, len=dx*dx+dy*dy;
+  const t = len ? Math.max(0,Math.min(1,-(ax*dx+ay*dy)/len)) : 0;
+  return Math.hypot(ax+t*dx, ay+t*dy);
+}
+function rebuild(){
+  routePts = [ends.a, ...waypoints, ends.b];
+  drawRoute(ends.a, ends.b, false);
+}
+map.on('click', e => {
+  if(watchId !== null || simTimer || !ends || $('mode').value !== 'line') return;
+  const pts = [ends.a, ...waypoints, ends.b];
+  let bi = 0, bd = Infinity;
+  for(let i=0;i<pts.length-1;i++){
+    const d = segDist(e.latlng.lat, e.latlng.lng, pts[i], pts[i+1]);
+    if(d < bd){ bd = d; bi = i; }
+  }
+  waypoints.splice(bi, 0, {lat:e.latlng.lat, lon:e.latlng.lng});
+  rebuild();
+});
+$('clearWp').onclick = () => { if(ends && watchId === null && !simTimer){ waypoints = []; rebuild(); } };
+$('mode').onchange = () => { $('osrmUrl').style.display = $('mode').value === 'osrm' ? '' : 'none'; };
+function pxFor(){ // radius in metres -> pixels at current view
+  const c = map.getCenter(), r = +$('radius').value || 1000;
+  const dLat = r/111320;
+  return Math.max(2, Math.abs(map.latLngToLayerPoint([c.lat+dLat,c.lng]).y - map.latLngToLayerPoint([c.lat,c.lng]).y));
+}
+$('radius').onchange = () => corridor && corridor.setStyle({weight:2*pxFor()});
+
+// distance (m) from point to the polyline, using a local flat approximation
+function distToRoute(lat, lon){
+  const kx = 111320*Math.cos(lat*Math.PI/180), ky = 110540;
+  let best = Infinity;
+  for(let i=0;i<routePts.length-1;i++){
+    const ax=(routePts[i].lon-lon)*kx, ay=(routePts[i].lat-lat)*ky;
+    const bx=(routePts[i+1].lon-lon)*kx, by=(routePts[i+1].lat-lat)*ky;
+    const dx=bx-ax, dy=by-ay, len=dx*dx+dy*dy;
+    let t = len ? Math.max(0,Math.min(1,-(ax*dx+ay*dy)/len)) : 0;
+    best = Math.min(best, Math.hypot(ax+t*dx, ay+t*dy));
+  }
+  return best;
+}
+
+// ----- alarm -----
+function beep(){
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type='square'; o.frequency.value=880; g.gain.value=.4;
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(); o.stop(audioCtx.currentTime+.3);
+  if(navigator.vibrate) navigator.vibrate([300,100,300]);
+}
+function startAlarm(){
+  if(alarmOn) return; alarmOn = true;
+  $('silence').style.display='block';
+  beep(); beepTimer = setInterval(beep, 700);
+  if('Notification' in window && Notification.permission==='granted')
+    new Notification('⚠️ Off route!', {body:'You have left the route corridor.'});
+}
+function stopAlarm(){
+  alarmOn=false; clearInterval(beepTimer); $('silence').style.display='none';
+  if(navigator.vibrate) navigator.vibrate(0);
+}
+$('silence').onclick = stopAlarm;
+
+// ----- journey -----
+$('start').onclick = async () => {
+  audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+  await audioCtx.resume();
+  if('Notification' in window && Notification.permission==='default') Notification.requestPermission();
+  try{ wakeLock = await navigator.wakeLock?.request('screen'); }catch(e){}
+  offCount = 0;
+  watchId = navigator.geolocation.watchPosition(onPos, e => setStatus('GPS error: '+e.message,'bad'),
+    {enableHighAccuracy:true, maximumAge:2000, timeout:20000});
+  $('start').disabled = true; $('stop').disabled = false; $('plan').disabled = true; $('sim').disabled = true;
+  setBanner('safe');
+  setStatus('Journey started. Waiting for GPS…');
+};
+
+function onPos(p){ evaluate(p.coords.latitude, p.coords.longitude, p.coords.accuracy); }
+
+function setBanner(state){
+  const b = $('banner');
+  b.className = state;
+  b.textContent = state === 'danger' ? '🚨 IN DANGER: OFF ROUTE' : '✅ SAFE';
+}
+
+// Shared by real GPS and the simulation: update marker, banner, status and alarm.
+function evaluate(lat, lon, accuracy){
+  if(!meMarker) meMarker = L.circleMarker([lat,lon],{radius:8,color:'#fff',fillColor:'#dc2626',fillOpacity:1,weight:2}).addTo(map);
+  else meMarker.setLatLng([lat,lon]);
+  const radius = +$('radius').value;
+  const d = distToRoute(lat,lon);
+  // only count it as off-route if clearly outside, allowing for GPS error
+  const off = d - Math.min(accuracy, radius) > radius;
+  offCount = off ? offCount+1 : 0;
+  if(offCount >= 2){
+    startAlarm();
+    setBanner('danger');
+    setStatus(`⚠️ OFF ROUTE: ${Math.round(d)} m away (limit ${radius} m)`,'bad');
+  } else {
+    setStatus(`On route: ${Math.round(d)} m from line (limit ${radius} m, GPS ±${Math.round(accuracy)} m)`,'ok');
+    if(alarmOn && d < radius*0.9) stopAlarm();
+    setBanner(alarmOn ? 'danger' : 'safe');
+  }
+}
+
+$('stop').onclick = () => {
+  if(watchId !== null){ navigator.geolocation.clearWatch(watchId); watchId = null; }
+  clearInterval(simTimer); simTimer = null;
+  stopAlarm(); wakeLock?.release?.();
+  if(meMarker){ map.removeLayer(meMarker); meMarker = null; }
+  offCount = 0; setBanner('safe');
+  $('start').disabled=false; $('sim').disabled=false; $('stop').disabled=true; $('plan').disabled=false;
+  setStatus('Stopped.');
+};
+
+// ----- simulation: a fake traveller goes A -> B, then veers off the route -----
+function routeLength(){
+  let L = 0;
+  for(let i=0;i<routePts.length-1;i++){ const m = segMeters(routePts[i], routePts[i+1]); L += Math.hypot(m.dx, m.dy); }
+  return L;
+}
+function segMeters(p, q){
+  const kx = 111320*Math.cos(((p.lat+q.lat)/2)*Math.PI/180), ky = 110540;
+  return {dx:(q.lon-p.lon)*kx, dy:(q.lat-p.lat)*ky};
+}
+function pointAt(d){ // position and unit direction (east, north) d metres along the route
+  for(let i=0;i<routePts.length-1;i++){
+    const p = routePts[i], q = routePts[i+1], m = segMeters(p, q), len = Math.hypot(m.dx, m.dy);
+    if(d <= len || i === routePts.length-2){
+      const t = len ? Math.min(1, d/len) : 0;
+      return {lat:p.lat+(q.lat-p.lat)*t, lon:p.lon+(q.lon-p.lon)*t, ux:len ? m.dx/len : 0, uy:len ? m.dy/len : 0};
+    }
+    d -= len;
+  }
+}
+$('sim').onclick = async () => {
+  if(simTimer || watchId !== null || !routePts.length) return;
+  audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+  await audioCtx.resume();
+  stopAlarm(); offCount = 0; setBanner('safe');
+  $('start').disabled = true; $('plan').disabled = true; $('sim').disabled = true; $('stop').disabled = false;
+  setStatus('Simulation running: traveller is moving from A to B…','ok');
+  const total = routeLength();
+  let i = 0;
+  simTimer = setInterval(() => {
+    const radius = +$('radius').value;
+    let f, off;                                  // f = fraction along route, off = metres sideways
+    if(i <= 24){ f = 0.45*i/24; off = 0; }       // follows the route
+    else if(i <= 40){ const j = i-24; f = 0.45+0.07*j/16; off = 3*radius*j/16; } // veers away
+    else { f = 0.52; off = 3*radius; }           // far off route
+    const pt = pointAt(f*total);
+    const kx = 111320*Math.cos(pt.lat*Math.PI/180), ky = 110540;
+    const lat = pt.lat + (pt.ux*off)/ky;         // sideways = (-uy, ux)
+    const lon = pt.lon + (-pt.uy*off)/kx;
+    evaluate(lat, lon, 5);
+    if(!map.getBounds().contains([lat, lon])) map.panTo([lat, lon]);
+    if(i >= 50){
+      clearInterval(simTimer); simTimer = null; stopAlarm();
+      setStatus('Simulation finished. The banner stays on DANGER until you tap Stop.','bad');
+    }
+    i++;
+  }, 400);
+};
+</script>
+</body>
+</html>

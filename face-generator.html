@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Face Composer</title>
+<style>
+:root{--bg:#eef0f3;--panel:#fff;--ink:#1c2430;--mute:#66707e;--line:#d5dae1;--acc:#2a6f6a;--acc-ink:#fff;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#14181e;--panel:#1d232b;--ink:#e8ecf1;--mute:#98a2b0;--line:#323b46;--acc:#5fb8b0;--acc-ink:#0f1a19;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Avenir Next","Segoe UI",system-ui,sans-serif}
+.wrap{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:24px;max-width:1180px;margin:0 auto;padding:24px}
+h1{font:600 28px/1.2 Georgia,"Times New Roman",serif;margin:0 0 4px}
+.sub{color:var(--mute);margin:0 0 20px}
+.group{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px}
+.group h2{font-size:15px;margin:0 0 10px;font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--line);background:transparent;color:var(--ink);padding:6px 12px;border-radius:999px;font:inherit;font-size:14px;cursor:pointer}
+.chip:hover{border-color:var(--acc)}
+.chip[aria-pressed="true"]{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
+.chip:focus-visible,.btn:focus-visible,textarea:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.side{position:sticky;top:24px;align-self:start}
+.frame{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+.canvas{position:relative;aspect-ratio:1/1;border-radius:6px;background:var(--bg);overflow:hidden;display:grid;place-items:center;text-align:center;color:var(--mute)}
+.canvas img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .4s}
+.canvas img.on{opacity:1}
+.row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.btn{flex:1;border:1px solid var(--line);background:transparent;color:var(--ink);padding:10px 14px;border-radius:8px;font:inherit;font-weight:600;cursor:pointer;min-width:110px}
+.btn.main{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
+.btn:disabled{opacity:.5;cursor:wait}
+textarea{width:100%;margin-top:12px;min-height:84px;resize:vertical;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:13px/1.4 inherit}
+.note{font-size:13px;color:var(--mute);margin:8px 0 0}
+@media (max-width:900px){.wrap{grid-template-columns:1fr}.side{position:static;order:-1}}
+@media (prefers-reduced-motion:reduce){.canvas img{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <main>
+    <h1>Face Composer</h1>
+    <p class="sub">Pick the features you want, then generate. Leave a group on “Any” to let the AI choose.</p>
+    <div id="groups"></div>
+  </main>
+  <aside class="side">
+    <div class="frame">
+      <div class="canvas" id="canvas"><span id="placeholder">Your face appears here</span><img id="out" alt="Generated face"></div>
+      <div class="row">
+        <button class="btn main" id="gen">Generate face</button>
+        <button class="btn" id="again">New variation</button>
+        <button class="btn" id="dl" disabled>Download</button>
+      </div>
+      <textarea id="prompt" aria-label="Prompt sent to the image generator"></textarea>
+      <p class="note">You can edit the prompt before generating. Images come from Pollinations.ai (free, no key).</p>
+    </div>
+  </aside>
+</div>
+<script>
+const OPTIONS=[
+ {k:"style",t:"Art style",o:["Photorealistic","Digital illustration","Anime","Oil painting","Pencil sketch","3D render"],d:0},
+ {k:"gender",t:"Gender presentation",o:["Woman","Man","Non-binary person"]},
+ {k:"age",t:"Age",o:["Child","Teenager","Young adult","Middle-aged","Elderly"]},
+ {k:"shape",t:"Face shape",o:["Oval","Round","Square","Heart-shaped","Long","Diamond","Triangular"]},
+ {k:"skin",t:"Skin tone",o:["Very fair","Fair","Light olive","Tan","Brown","Dark brown","Deep ebony"]},
+ {k:"eyecol",t:"Eye color",o:["Brown","Blue","Green","Hazel","Gray","Amber"]},
+ {k:"eyeshape",t:"Eye shape",o:["Almond","Round","Hooded","Upturned","Downturned","Monolid","Deep-set"]},
+ {k:"brows",t:"Eyebrows",o:["Thin","Thick","Arched","Straight","Bushy"]},
+ {k:"nose",t:"Nose",o:["Small","Button","Straight","Roman","Wide","Narrow","Upturned"]},
+ {k:"lips",t:"Lips",o:["Thin","Full","Heart-shaped","Wide","Small"]},
+ {k:"jaw",t:"Jaw and chin",o:["Strong jawline","Soft jawline","Pointed chin","Round chin","Cleft chin"]},
+ {k:"hairstyle",t:"Hairstyle",o:["Short crop","Buzz cut","Long straight","Long wavy","Curly","Afro","Bob","Ponytail","Braids","Bald","Messy bun"]},
+ {k:"haircol",t:"Hair color",o:["Black","Dark brown","Light brown","Blonde","Red","Gray","White","Blue dyed","Pink dyed"]},
+ {k:"facial",t:"Facial hair",o:["Clean shaven","Stubble","Full beard","Goatee","Mustache"]},
+ {k:"extras",t:"Extras",m:true,o:["Glasses","Freckles","Mole","Scar","Dimples","Earrings","Wrinkles","Face tattoo"]},
+ {k:"expr",t:"Expression",o:["Neutral","Smiling","Laughing","Serious","Surprised","Sad","Smirking"]},
+ {k:"light",t:"Lighting",o:["Soft studio light","Golden hour","Dramatic side light","Overcast daylight","Neon lights"]}
+];
+const state={};
+OPTIONS.forEach(g=>state[g.k]=g.m?new Set():(g.d!=null?g.o[g.d]:null));
+const groups=document.getElementById("groups");
+const promptEl=document.getElementById("prompt");
+let seed=Math.floor(Math.random()*1e6),edited=false;
+
+function build(){
+ OPTIONS.forEach(g=>{
+  const box=document.createElement("section");box.className="group";
+  box.innerHTML=`<h2>${g.t}</h2><div class="chips"></div>`;
+  const chips=box.querySelector(".chips");
+  const items=g.m?g.o:["Any",...g.o];
+  items.forEach(label=>{
+   const b=document.createElement("button");b.type="button";b.className="chip";b.textContent=label;
+   b.onclick=()=>{
+    if(g.m){state[g.k].has(label)?state[g.k].delete(label):state[g.k].add(label)}
+    else state[g.k]=label==="Any"?null:label;
+    refresh();
+   };
+   b.dataset.k=g.k;b.dataset.v=label;chips.appendChild(b);
+  });
+  groups.appendChild(box);
+ });
+}
+function refresh(){
+ document.querySelectorAll(".chip").forEach(b=>{
+  const g=OPTIONS.find(x=>x.k===b.dataset.k),v=b.dataset.v;
+  b.setAttribute("aria-pressed",g.m?state[g.k].has(v):(v==="Any"?state[g.k]===null:state[g.k]===v));
+ });
+ if(!edited)promptEl.value=makePrompt();
+}
+function makePrompt(){
+ const s=state,p=[];
+ const style=s.style||"Photorealistic";
+ p.push(style==="Photorealistic"?"photorealistic portrait photo of a face, front view, head and shoulders":style.toLowerCase()+" portrait of a face, front view, head and shoulders");
+ const who=[s.age,s.gender].filter(Boolean).join(" ");
+ if(who)p.push(who.toLowerCase());
+ if(s.shape)p.push(s.shape.toLowerCase()+" face shape");
+ if(s.skin)p.push(s.skin.toLowerCase()+" skin tone");
+ if(s.eyecol||s.eyeshape)p.push([s.eyecol,s.eyeshape].filter(Boolean).join(" ").toLowerCase()+" eyes");
+ if(s.brows)p.push(s.brows.toLowerCase()+" eyebrows");
+ if(s.nose)p.push(s.nose.toLowerCase()+" nose");
+ if(s.lips)p.push(s.lips.toLowerCase()+" lips");
+ if(s.jaw)p.push(s.jaw.toLowerCase());
+ if(s.hairstyle==="Bald")p.push("bald");
+ else if(s.hairstyle||s.haircol)p.push([s.haircol,s.hairstyle].filter(Boolean).join(" ").toLowerCase()+" hair");
+ if(s.facial)p.push(s.facial.toLowerCase());
+ state.extras.forEach(e=>p.push(e.toLowerCase()));
+ if(s.expr)p.push(s.expr.toLowerCase()+" expression");
+ if(s.light)p.push(s.light.toLowerCase());
+ p.push("highly detailed, sharp focus, plain background");
+ return p.join(", ");
+}
+const out=document.getElementById("out"),ph=document.getElementById("placeholder");
+const gen=document.getElementById("gen"),again=document.getElementById("again"),dl=document.getElementById("dl");
+let currentUrl="";
+function generate(newSeed){
+ if(newSeed)seed=Math.floor(Math.random()*1e6);
+ const q=promptEl.value.trim()||makePrompt();
+ currentUrl=`https://image.pollinations.ai/prompt/${encodeURIComponent(q)}?width=768&height=768&seed=${seed}&nologo=true&model=flux`;
+ gen.disabled=again.disabled=true;gen.textContent="Generating…";
+ out.classList.remove("on");ph.style.display="";ph.textContent="Generating, this can take 10–30 seconds…";
+ out.onload=()=>{out.classList.add("on");ph.style.display="none";done(true)};
+ out.onerror=()=>{ph.textContent="Couldn’t load the image. Check your connection and try again.";done(false)};
+ out.src=currentUrl;
+}
+function done(ok){gen.disabled=again.disabled=false;gen.textContent="Generate face";dl.disabled=!ok}
+gen.onclick=()=>generate(false);
+again.onclick=()=>generate(true);
+promptEl.addEventListener("input",()=>{edited=true});
+dl.onclick=async()=>{
+ try{
+  const r=await fetch(currentUrl),b=await r.blob(),a=document.createElement("a");
+  a.href=URL.createObjectURL(b);a.download="face-"+seed+".jpg";a.click();URL.revokeObjectURL(a.href);
+ }catch(e){window.open(currentUrl,"_blank")}
+};
+build();refresh();
+</script>
+</body>
+</html>
