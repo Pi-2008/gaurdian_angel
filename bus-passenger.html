@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guardian Angel — Bus Passenger Manifest & Entry Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0f19;
+    --card: #151c2c;
+    --border: #242f45;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --danger: #dc2626;
+    --success: #16a34a;
+    --text: #f8fafc;
+    --muted: #94a3b8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px 16px 60px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .wrap { width: 100%; max-width: 1080px; }
+  .nav-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.95rem;
+    margin-bottom: 20px;
+    transition: color 0.2s;
+  }
+  .nav-back:hover { color: var(--text); }
+  .header { margin-bottom: 24px; }
+  .badge {
+    display: inline-block;
+    background: rgba(37, 99, 235, 0.15);
+    color: #60a5fa;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+  h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.5px; }
+  .sub { color: var(--muted); font-size: 1rem; margin-top: 4px; }
+
+  /* Stats row */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 20px;
+  }
+  .stat-val { font-size: 2rem; font-weight: 800; color: #fff; margin-bottom: 2px; }
+  .stat-label { font-size: 0.85rem; color: var(--muted); }
+
+  /* Main Grid */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 24px;
+  }
+  @media (max-width: 860px) {
+    .main-grid { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin-bottom: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  /* Video & Detection Container */
+  .camera-container {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4/3;
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #334155;
+  }
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1); /* Mirror view for user convenience */
+  }
+  canvas#detectCanvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    transform: scaleX(-1);
+  }
+  .camera-placeholder {
+    position: absolute;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.95rem;
+    padding: 20px;
+  }
+  .threat-overlay {
+    position: absolute;
+    top: 12px; left: 12px; right: 12px;
+    background: rgba(220, 38, 38, 0.92);
+    color: #fff;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-weight: 700;
+    text-align: center;
+    font-size: 0.95rem;
+    display: none;
+    animation: flash 0.8s infinite alternate;
+    z-index: 10;
+  }
+  @keyframes flash { from { opacity: 1; } to { opacity: 0.6; } }
+
+  .btn-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  button {
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: 0;
+    transition: all 0.2s;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-secondary { background: #1e293b; color: #cbd5e1; border: 1px solid #334155; }
+  .btn-secondary:hover { background: #334155; color: #fff; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Manifest Table */
+  .table-scroll {
+    max-height: 440px;
+    overflow-y: auto;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    margin-top: 10px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+    text-align: left;
+  }
+  th {
+    background: #0f172a;
+    padding: 12px 14px;
+    font-weight: 600;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid #1e293b;
+    color: #e2e8f0;
+  }
+  tr:last-child td { border-bottom: 0; }
+  tr:hover { background: rgba(255, 255, 255, 0.02); }
+  .thumb-img {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    object-fit: cover;
+    background: #1e293b;
+    border: 1px solid #334155;
+    vertical-align: middle;
+  }
+  .status-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(22, 163, 74, 0.2);
+    color: #4ade80;
+  }
+  .status-threat {
+    background: rgba(220, 38, 38, 0.25);
+    color: #f87171;
+  }
+
+  /* Gallery section */
+  .gallery-sec {
+    margin-top: 24px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 20px;
+  }
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .passenger-card {
+    background: #0f172a;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    text-align: center;
+    padding-bottom: 8px;
+  }
+  .passenger-card img {
+    width: 100%;
+    aspect-ratio: 1/1;
+    object-fit: cover;
+  }
+  .card-id { font-size: 0.8rem; font-weight: 700; margin-top: 6px; color: #fff; }
+  .card-time { font-size: 0.7rem; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <a href="index.html" class="nav-back">&larr; Back to Guardian Angel Portal</a>
+
+  <div class="header">
+    <div class="badge">Transit Computer Vision</div>
+    <h1>🚌 Bus Passenger Manifest & Entry Tracker</h1>
+    <p class="sub">Logs every boarding passenger to establish accountability and deter transit crimes.</p>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-val" id="statCount">0</div>
+      <div class="stat-label">Passengers Boarded</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="statCapacity">52</div>
+      <div class="stat-label">Total Bus Capacity</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="statThreats" style="color: #4ade80;">0</div>
+      <div class="stat-label">Weapon Alerts Flagged</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="statStatus">Ready</div>
+      <div class="stat-label">Camera Status</div>
+    </div>
+  </div>
+
+  <div class="main-grid">
+    <!-- Camera View Panel -->
+    <div class="panel">
+      <div class="panel-title">
+        <span>📹 Entrance Doorway Camera</span>
+        <span id="aiBadge" style="font-size: 0.8rem; color: var(--muted);">AI Initializing…</span>
+      </div>
+
+      <div class="camera-container">
+        <video id="video" playsinline muted></video>
+        <canvas id="detectCanvas"></canvas>
+        <div class="threat-overlay" id="threatOverlay">🚨 WEAPON DETECTED ON BOARDING PASSENGER!</div>
+        <div class="camera-placeholder" id="placeholder">
+          <p style="font-size: 2.2rem; margin-bottom: 8px;">📷</p>
+          <p>Click "Start Door Camera" to begin real-time passenger logging and weapon detection.</p>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn-primary" id="btnStart" disabled>Start Door Camera</button>
+        <button class="btn-danger" id="btnStop" disabled>Stop Camera</button>
+        <button class="btn-secondary" id="btnSimulate">+ Log Test Passenger</button>
+      </div>
+      <p style="font-size: 0.8rem; color: var(--muted); margin-top: 10px;">
+        💡 For higher-accuracy YOLOv8m camera tracking, run: <code>python traveller_tracker.py</code>
+      </p>
+    </div>
+
+    <!-- Live Manifest Table Panel -->
+    <div class="panel">
+      <div class="panel-title">
+        <span>📋 Passenger Manifest Record</span>
+        <button class="btn-secondary" id="btnExport" style="padding: 6px 12px; font-size: 0.8rem;">📥 Export CSV</button>
+      </div>
+
+      <div class="table-scroll">
+        <table id="manifestTable">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Photo</th>
+              <th>Timestamp</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <!-- Dynamically populated rows -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Passenger Photo Cards -->
+  <div class="gallery-sec">
+    <div class="panel-title">
+      <span>👥 Recent Boarded Passenger Portraits</span>
+      <span style="font-size: 0.85rem; color: var(--muted);" id="galleryCount">0 saved</span>
+    </div>
+    <div class="cards-grid" id="cardsGrid">
+      <!-- Image cards populated here -->
+    </div>
+  </div>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const video = $('video');
+  const canvas = $('detectCanvas');
+  const ctx = canvas.getContext('2d');
+  const placeholder = $('placeholder');
+  const threatOverlay = $('threatOverlay');
+
+  let model = null;
+  let stream = null;
+  let isDetecting = false;
+  let passengerCounter = 0;
+  let threatCounter = 0;
+  let manifestData = [];
+  let lastLogTime = 0;
+  let audioCtx = null;
+
+  // Sound generator for boarding chime and alarm
+  function playChime() {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.1); // A5
+      gain.setValueAtTime(0.15, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(); osc.stop(audioCtx.currentTime + 0.35);
+    } catch(e) {}
+  }
+
+  function playAlertAlarm() {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.4);
+      gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.45);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(); osc.stop(audioCtx.currentTime + 0.45);
+    } catch(e) {}
+  }
+
+  // Load COCO-SSD Model
+  cocoSsd.load().then(loadedModel => {
+    model = loadedModel;
+    $('aiBadge').textContent = 'AI Ready (COCO-SSD)';
+    $('aiBadge').style.color = '#4ade80';
+    $('btnStart').disabled = false;
+  }).catch(err => {
+    $('aiBadge').textContent = 'AI Model Error';
+    console.error(err);
+  });
+
+  // Start Camera
+  $('btnStart').addEventListener('click', async () => {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+        audio: false
+      });
+      video.srcObject = stream;
+      await video.play();
+
+      placeholder.style.display = 'none';
+      $('btnStart').disabled = true;
+      $('btnStop').disabled = false;
+      $('statStatus').textContent = 'Live';
+      $('statStatus').style.color = '#4ade80';
+
+      isDetecting = true;
+      detectFrame();
+    } catch(err) {
+      alert('Unable to access camera: ' + err.message);
+    }
+  });
+
+  // Stop Camera
+  $('btnStop').addEventListener('click', stopCamera);
+  function stopCamera() {
+    isDetecting = false;
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+    video.srcObject = null;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    placeholder.style.display = 'block';
+    $('btnStart').disabled = false;
+    $('btnStop').disabled = true;
+    $('statStatus').textContent = 'Stopped';
+    $('statStatus').style.color = 'var(--text)';
+  }
+
+  // Real-time Detection Loop
+  async function detectFrame() {
+    if (!isDetecting || !video.videoWidth) {
+      if (isDetecting) requestAnimationFrame(detectFrame);
+      return;
+    }
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const predictions = await model.detect(video);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    let hasThreat = false;
+    let personFound = null;
+
+    predictions.forEach(pred => {
+      const [x, y, w, h] = pred.bbox;
+
+      if (pred.class === 'person' && pred.score >= 0.5) {
+        personFound = pred;
+        ctx.strokeStyle = '#22c55e';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x, y, w, h);
+
+        ctx.fillStyle = '#22c55e';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.fillText(`Passenger (${Math.round(pred.score * 100)}%)`, x, y > 20 ? y - 6 : y + 16);
+      } else if (pred.class === 'knife' || pred.class === 'scissors') {
+        hasThreat = true;
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(x, y, w, h);
+
+        ctx.fillStyle = '#ef4444';
+        ctx.font = 'bold 18px sans-serif';
+        ctx.fillText(`⚠️ WEAPON (${Math.round(pred.score * 100)}%)`, x, y > 20 ? y - 6 : y + 20);
+      }
+    });
+
+    // Handle Weapon Threat
+    if (hasThreat) {
+      threatOverlay.style.display = 'block';
+      playAlertAlarm();
+      threatCounter++;
+      $('statThreats').textContent = threatCounter;
+      $('statThreats').style.color = '#ef4444';
+    } else {
+      threatOverlay.style.display = 'none';
+    }
+
+    // Auto-log passenger with cooldown (3 seconds between entries)
+    const now = Date.now();
+    if (personFound && (now - lastLogTime > 3000)) {
+      lastLogTime = now;
+      logPassengerFromFrame(personFound.bbox);
+    }
+
+    if (isDetecting) requestAnimationFrame(detectFrame);
+  }
+
+  // Capture thumbnail and add row to table
+  function logPassengerFromFrame(bbox) {
+    passengerCounter++;
+    playChime();
+
+    const [bx, by, bw, bh] = bbox;
+    // Capture from video
+    const snapCanvas = document.createElement('canvas');
+    snapCanvas.width = 120;
+    snapCanvas.height = 120;
+    const sCtx = snapCanvas.getContext('2d');
+
+    // Safe bounds
+    const sx = Math.max(0, bx);
+    const sy = Math.max(0, by);
+    const sw = Math.min(video.videoWidth - sx, bw);
+    const sh = Math.min(video.videoHeight - sy, bh);
+
+    sCtx.drawImage(video, sx, sy, sw, sh, 0, 0, 120, 120);
+    const dataUrl = snapCanvas.toDataURL('image/jpeg', 0.85);
+
+    addPassengerRecord({
+      id: `#${passengerCounter.toString().padStart(3, '0')}`,
+      time: new Date().toLocaleTimeString(),
+      status: 'Boarded Bus',
+      img: dataUrl
+    });
+  }
+
+  // Simulate Button
+  $('btnSimulate').addEventListener('click', () => {
+    passengerCounter++;
+    playChime();
+    const demoCanvas = document.createElement('canvas');
+    demoCanvas.width = 120; demoCanvas.height = 120;
+    const dCtx = demoCanvas.getContext('2d');
+    dCtx.fillStyle = '#1e293b'; dCtx.fillRect(0, 0, 120, 120);
+    dCtx.font = '36px sans-serif'; dCtx.textAlign = 'center';
+    dCtx.fillText('👤', 60, 72);
+
+    addPassengerRecord({
+      id: `#${passengerCounter.toString().padStart(3, '0')}`,
+      time: new Date().toLocaleTimeString(),
+      status: 'Boarded Bus',
+      img: demoCanvas.toDataURL()
+    });
+  });
+
+  function addPassengerRecord(rec) {
+    manifestData.unshift(rec);
+    $('statCount').textContent = passengerCounter;
+
+    // Update table
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${rec.id}</strong></td>
+      <td><img src="${rec.img}" class="thumb-img" alt="Passenger"></td>
+      <td>${rec.time}</td>
+      <td><span class="status-badge">${rec.status}</span></td>
+    `;
+    $('tableBody').prepend(tr);
+
+    // Update gallery cards
+    const card = document.createElement('div');
+    card.className = 'passenger-card';
+    card.innerHTML = `
+      <img src="${rec.img}" alt="Passenger">
+      <div class="card-id">${rec.id}</div>
+      <div class="card-time">${rec.time}</div>
+    `;
+    $('cardsGrid').prepend(card);
+    $('galleryCount').textContent = `${manifestData.length} saved`;
+  }
+
+  // Export to CSV
+  $('btnExport').addEventListener('click', () => {
+    if (!manifestData.length) {
+      alert('No passenger records to export yet.');
+      return;
+    }
+    let csv = 'Passenger_ID,Timestamp,Status\n';
+    manifestData.forEach(r => {
+      csv += `"${r.id}","${r.time}","${r.status}"\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bus_passenger_manifest_${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // Try to load any existing manifest entries from Python backend (bus_manifest.csv)
+  fetch('/bus_manifest.csv').then(r => {
+    if (!r.ok) return null;
+    return r.text();
+  }).then(text => {
+    if (!text) return;
+    const lines = text.trim().split('\n').slice(1); // skip header
+    lines.forEach(line => {
+      const parts = line.split(',');
+      if (parts.length >= 4) {
+        passengerCounter++;
+        const ts = parts[0].replace(/"/g, '');
+        const id = parts[1].replace(/"/g, '');
+        const cropFile = parts[5] ? parts[5].replace(/"/g, '').trim() : '';
+        const imgUrl = cropFile ? `travellers/${cropFile}` : '';
+
+        manifestData.push({
+          id: `#${id.toString().padStart(3, '0')}`,
+          time: ts,
+          status: 'Boarded Bus',
+          img: imgUrl
+        });
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><strong>#${id}</strong></td>
+          <td>${imgUrl ? `<img src="${imgUrl}" class="thumb-img" onerror="this.src=''">` : '👤'}</td>
+          <td>${ts}</td>
+          <td><span class="status-badge">Boarded Bus</span></td>
+        `;
+        $('tableBody').appendChild(tr);
+
+        if (imgUrl) {
+          const card = document.createElement('div');
+          card.className = 'passenger-card';
+          card.innerHTML = `
+            <img src="${imgUrl}" alt="Passenger" onerror="this.style.display='none'">
+            <div class="card-id">#${id}</div>
+            <div class="card-time">${ts}</div>
+          `;
+          $('cardsGrid').appendChild(card);
+        }
+      }
+    });
+    $('statCount').textContent = passengerCounter;
+    $('galleryCount').textContent = `${manifestData.length} saved`;
+  }).catch(() => {});
+</script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guardian Angel — Travel Safety Suite</title>
+<style>
+  :root {
+    --bg: #f8fafc;
+    --text: #0f172a;
+    --muted: #64748b;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --accent: #1e3a8a;
+    --danger: #dc2626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #090d16;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --card: #131b2e;
+      --border: #1e293b;
+      --accent: #3b82f6;
+      --danger: #ef4444;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 16px 60px;
+  }
+  main { width: 100%; max-width: 520px; }
+  .badge {
+    display: inline-block;
+    background: rgba(30, 58, 138, 0.1);
+    color: var(--accent);
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .header-box { text-align: center; margin-bottom: 32px; }
+  h1 { font-size: 2.2rem; margin: 0 0 6px; letter-spacing: -0.5px; }
+  .tag { color: var(--muted); margin: 0; font-size: 1.05rem; }
+  
+  .btn-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--card);
+    border: 2px solid var(--border);
+    border-radius: 18px;
+    padding: 20px 22px;
+    margin-bottom: 16px;
+    text-decoration: none;
+    color: var(--text);
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  }
+  .btn-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(0,0,0,0.06);
+  }
+  .btn-card .icon {
+    font-size: 2.2rem;
+    flex-shrink: 0;
+  }
+  .btn-card strong {
+    display: block;
+    font-size: 1.15rem;
+    margin-bottom: 3px;
+    color: var(--text);
+  }
+  .btn-card span {
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.35;
+    display: block;
+  }
+  .sos {
+    text-align: center;
+    margin-top: 36px;
+    color: var(--muted);
+    font-size: 0.95rem;
+    background: var(--card);
+    padding: 16px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+  }
+  .sos a { color: var(--danger); font-weight: 800; text-decoration: none; font-size: 1.1rem; }
+  .streamlit-link {
+    display: block;
+    text-align: center;
+    margin-top: 20px;
+    font-size: 0.9rem;
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="header-box">
+    <div class="badge">Travel Safety Platform</div>
+    <h1>🛡️ Guardian Angel</h1>
+    <p class="tag">You are not alone. Multi-tier personal defense.</p>
+  </div>
+
+  <a class="btn-card" href="face-generator.html">
+    <div class="icon">🎨</div>
+    <div>
+      <strong>Perpetrator Face Generator</strong>
+      <span>Forensic sketcher to reconstruct criminal likenesses</span>
+    </div>
+  </a>
+
+  <a class="btn-card" href="fake-call.html">
+    <div class="icon">📞</div>
+    <div>
+      <strong>Police Intimidation Fake Call</strong>
+      <span>Simulate an authoritative police call to scare creeps away</span>
+    </div>
+  </a>
+
+  <a class="btn-card" href="route.html">
+    <div class="icon">🗺️</div>
+    <div>
+      <strong>Anti-Kidnapping Route Checker</strong>
+      <span>Corridor tracking with siren alarms if taken off-route</span>
+    </div>
+  </a>
+
+  <a class="btn-card" href="voice.html">
+    <div class="icon">🎙️</div>
+    <div>
+      <strong>Voice Distress Listener</strong>
+      <span>Acoustic emergency trigger listening for distress keywords</span>
+    </div>
+  </a>
+
+  <a class="btn-card" href="http://localhost:8501" target="_blank">
+    <div class="icon">🚌</div>
+    <div>
+      <strong>Bus Passenger Manifest Dashboard</strong>
+      <span>View logged bus passengers & YOLOv8 computer vision suite</span>
+    </div>
+  </a>
+
+  <div class="sos">
+    ⚠️ Immediate Threat? Emergency Dispatch: <a href="tel:112">Dial 112</a> &bull; Women: <a href="tel:1091">1091</a>
+  </div>
+
+  <a class="streamlit-link" href="http://localhost:8501" target="_blank">
+    Open Streamlit Command Center (localhost:8501) &rarr;
+  </a>
+</main>
+</body>
+</html>

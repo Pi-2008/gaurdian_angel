@@ -269,76 +269,86 @@ elif page == "🚌 Bus Passenger Manifest Tracker":
     st.markdown('<p class="main-title">🚌 Bus Passenger Manifest & Entry Tracker</p>', unsafe_allow_html=True)
     st.markdown('<p class="sub-title">Automated computer vision tracker that monitors bus boarding doors, logs every passenger to a manifest file, and saves high-resolution portraits to establish biometric accountability.</p>', unsafe_allow_html=True)
 
-    manifest_path = os.path.join(BASE_DIR, "bus_manifest.csv")
-    threat_path = os.path.join(BASE_DIR, "threat_alerts.csv")
+    tab_cam, tab_data = st.tabs(["📹 Live Entrance Camera & Detection", "📋 Manifest Records & Analysis"])
 
-    p_col1, p_col2 = st.columns([1, 1])
-    with p_col1:
-        st.markdown("### 📋 How the Bus Tracker Works")
-        st.markdown("""
-        1. **Doorway Camera Monitoring:** A camera mounted above the bus entrance continuously tracks passengers entering.
-        2. **Unique Persistent Tracking:** YOLOv8 + ByteTrack assigns a persistent track ID so passengers are not double-counted.
-        3. **Dual Image Capture:** For every passenger, both a **full-frame entry photo** and a **cropped face/bust portrait** are saved in `travellers/`.
-        4. **Structured Manifest File:** Details are saved directly to [`bus_manifest.csv`](file:///c:/Users/Dell/Desktop/gaurdian%20angel/bus_manifest.csv).
-        5. **Concealed Weapon Alarm:** If someone boards with an open blade or weapon, it triggers an instant alert saved to `threat_alerts.csv`.
-        """)
-        st.info("💡 **Run the Live Camera Tracker:** Run `python traveller_tracker.py` in your terminal.")
+    with tab_cam:
+        bus_html = get_file_content("bus-passenger.html")
+        if bus_html:
+            components.html(bus_html, height=920, scrolling=True)
+        else:
+            st.warning("bus-passenger.html not found.")
 
-    with p_col2:
-        st.markdown("### 🧪 Instant Image Passenger & Threat Tester")
-        test_file = st.file_uploader("Upload bus entrance photo to test passenger/weapon logging", type=["jpg", "jpeg", "png"])
-        if test_file is not None:
-            img = Image.open(test_file)
-            st.image(img, caption="Uploaded Bus Entrance Frame", use_container_width=True)
-            if st.button("Run YOLOv8 Bus Entrance Scan", type="primary"):
-                with st.spinner("Analyzing entry frame..."):
-                    try:
-                        from ultralytics import YOLO
-                        model_path = os.path.join(BASE_DIR, "yolov8n.pt")
-                        if not os.path.exists(model_path): model_path = "yolov8n.pt"
-                        model = YOLO(model_path)
-                        res = model(img, conf=0.35)[0]
-                        st.image(res.plot(), caption="Detected Persons & Objects", use_container_width=True)
-                        classes = [model.names[int(c)] for c in res.boxes.cls]
-                        st.write(f"**Detected in Entry Frame:** {', '.join(set(classes)) if classes else 'None'}")
-                        if "knife" in classes:
-                            st.error("🚨 DANGER: Weapon / Knife detected on boarding passenger!")
-                    except Exception as e:
-                        st.error(f"Error: {e}")
+    with tab_data:
+        manifest_path = os.path.join(BASE_DIR, "bus_manifest.csv")
+        threat_path = os.path.join(BASE_DIR, "threat_alerts.csv")
 
-    st.markdown("---")
-    st.subheader("📁 Bus Passenger Manifest Records (`bus_manifest.csv`)")
+        p_col1, p_col2 = st.columns([1, 1])
+        with p_col1:
+            st.markdown("### 📋 How the Bus Tracker Works")
+            st.markdown("""
+            1. **Doorway Camera Monitoring:** A camera mounted above the bus entrance continuously tracks passengers entering.
+            2. **Unique Persistent Tracking:** YOLOv8 + ByteTrack assigns a persistent track ID so passengers are not double-counted.
+            3. **Dual Image Capture:** For every passenger, both a **full-frame entry photo** and a **cropped face/bust portrait** are saved in `travellers/`.
+            4. **Structured Manifest File:** Details are saved directly to `bus_manifest.csv`.
+            5. **Concealed Weapon Alarm:** If someone boards with an open blade or weapon, it triggers an instant alert saved to `threat_alerts.csv`.
+            """)
+            st.info("💡 **Run the Python OpenCV Tracker:** Run `python traveller_tracker.py` in your terminal for GPU-accelerated local camera logging.")
 
-    if os.path.exists(manifest_path):
-        try:
-            df = pd.read_csv(manifest_path)
-            if not df.empty:
-                st.dataframe(df, use_container_width=True)
-                csv_bytes = df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Download Passenger Manifest (CSV)",
-                    data=csv_bytes,
-                    file_name="bus_passenger_manifest.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.info("Manifest file is initialized but no passenger entries have been recorded yet.")
-        except Exception as e:
-            st.warning(f"Unable to read bus_manifest.csv: {e}")
-    else:
-        st.info("No bus_manifest.csv found. Run `python traveller_tracker.py` to start logging passengers.")
+        with p_col2:
+            st.markdown("### 🧪 Instant Image Passenger & Threat Tester")
+            test_file = st.file_uploader("Upload bus entrance photo to test passenger/weapon logging", type=["jpg", "jpeg", "png"])
+            if test_file is not None:
+                img = Image.open(test_file)
+                st.image(img, caption="Uploaded Bus Entrance Frame", use_container_width=True)
+                if st.button("Run YOLOv8 Bus Entrance Scan", type="primary"):
+                    with st.spinner("Analyzing entry frame..."):
+                        try:
+                            from ultralytics import YOLO
+                            model_path = os.path.join(BASE_DIR, "yolov8n.pt")
+                            if not os.path.exists(model_path): model_path = "yolov8n.pt"
+                            model = YOLO(model_path)
+                            res = model(img, conf=0.35)[0]
+                            st.image(res.plot(), caption="Detected Persons & Objects", use_container_width=True)
+                            classes = [model.names[int(c)] for c in res.boxes.cls]
+                            st.write(f"**Detected in Entry Frame:** {', '.join(set(classes)) if classes else 'None'}")
+                            if "knife" in classes:
+                                st.error("🚨 DANGER: Weapon / Knife detected on boarding passenger!")
+                        except Exception as e:
+                            st.error(f"Error: {e}")
 
-    st.markdown("---")
-    st.subheader("👥 Boarded Passenger Photo Gallery (`travellers/`)")
-    traveller_files = glob.glob(os.path.join(BASE_DIR, "travellers", "*.*"))
-    if traveller_files:
-        st.caption(f"Showing {len(traveller_files)} saved passenger entry captures:")
-        cols = st.columns(4)
-        for i, img_path in enumerate(traveller_files[-12:]):
-            with cols[i % 4]:
-                st.image(img_path, caption=os.path.basename(img_path), use_container_width=True)
-    else:
-        st.info("No passenger portrait captures found yet in travellers/ folder.")
+        st.markdown("---")
+        st.subheader("📁 Bus Passenger Manifest Records (`bus_manifest.csv`)")
+
+        if os.path.exists(manifest_path):
+            try:
+                df = pd.read_csv(manifest_path)
+                if not df.empty:
+                    st.dataframe(df, use_container_width=True)
+                    csv_bytes = df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Download Passenger Manifest (CSV)",
+                        data=csv_bytes,
+                        file_name="bus_passenger_manifest.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.info("Manifest file is initialized but no passenger entries have been recorded yet.")
+            except Exception as e:
+                st.warning(f"Unable to read bus_manifest.csv: {e}")
+        else:
+            st.info("No bus_manifest.csv found. Run `python traveller_tracker.py` to start logging passengers.")
+
+        st.markdown("---")
+        st.subheader("👥 Boarded Passenger Photo Gallery (`travellers/`)")
+        traveller_files = glob.glob(os.path.join(BASE_DIR, "travellers", "*.*"))
+        if traveller_files:
+            st.caption(f"Showing {len(traveller_files)} saved passenger entry captures:")
+            cols = st.columns(4)
+            for i, img_path in enumerate(traveller_files[-12:]):
+                with cols[i % 4]:
+                    st.image(img_path, caption=os.path.basename(img_path), use_container_width=True)
+        else:
+            st.info("No passenger portrait captures found yet in travellers/ folder.")
 
 # ==================== PAGE: VOICE DISTRESS LISTENER ====================
 elif page == "🎙️ Voice Distress Listener":
